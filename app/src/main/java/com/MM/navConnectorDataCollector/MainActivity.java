@@ -4,19 +4,14 @@ import android.Manifest;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
-import android.util.Log;
-import android.widget.TextView;
 
-import androidx.activity.EdgeToEdge;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
-import androidx.core.graphics.Insets;
-import androidx.core.view.ViewCompat;
-import androidx.core.view.WindowInsetsCompat;
 
 import com.MM.navConnectorDataCollector.BLE.BluetoothLeService;
+import com.MM.navConnectorDataCollector.view.DisplayManager;
 
 import java.io.BufferedReader;
 import java.io.FileInputStream;
@@ -25,27 +20,14 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 
 public class MainActivity extends AppCompatActivity {
-
     BluetoothLeService bluetoothLeService;
-
-    TextView dynamicText;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
 
         super.onCreate(savedInstanceState);
 
-        EdgeToEdge.enable(this);
-
-        setContentView(R.layout.activity_main);
-
-        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main),
-                (v, insets) -> {
-                    Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
-                    v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
-                    return insets;
-                });
-
+        new DisplayManager(this);
 
         bluetoothLeService = new BluetoothLeService(this, this);
 
@@ -68,13 +50,11 @@ public class MainActivity extends AppCompatActivity {
             bluetoothLeService.onCreate();
     }
 
-    public void changeBleDeviceName(String newName) {
-
-    }
-
     @Override
     public void onStart() {
         super.onStart();
+
+        bluetoothLeService.onStart();
 
         String filename = "myfile.txt";
         try (FileOutputStream fos = MainActivity.this.openFileOutput(filename, Context.MODE_PRIVATE)) {
@@ -91,12 +71,10 @@ public class MainActivity extends AppCompatActivity {
             while ((line = reader.readLine()) != null) {
                 sb.append(line).append('\n');
 
-                Log.d("FileIO", "File Contents: " + line);
+                DisplayManager.printToConsole("FileIO", "File Contents: " + line);
             }
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
-
-
 }

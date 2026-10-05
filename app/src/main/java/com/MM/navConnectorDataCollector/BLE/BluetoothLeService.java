@@ -1,6 +1,5 @@
 package com.MM.navConnectorDataCollector.BLE;
 
-import android.Manifest;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
@@ -14,12 +13,10 @@ import android.bluetooth.le.ScanCallback;
 import android.bluetooth.le.ScanResult;
 import android.content.Context;
 
-import android.content.pm.PackageManager;
 import android.util.Log;
 
-import androidx.core.app.ActivityCompat;
-
 import com.MM.navConnectorDataCollector.MainActivity;
+import com.MM.navConnectorDataCollector.view.DisplayManager;
 
 import java.util.UUID;
 
@@ -42,14 +39,17 @@ public class BluetoothLeService {
         bluetoothAdapter = (bluetoothManager != null) ? bluetoothManager.getAdapter() : null;
 
         if (bluetoothAdapter == null) {
-            Log.e(TAG, "Bluetooth is not supported on this hardware platform.");
+            DisplayManager.printToConsole(
+                    TAG, "Bluetooth is not supported on this hardware platform.");
         } else if (!bluetoothAdapter.isEnabled()) {
-            Log.w(TAG, "Bluetooth manager initialized, but Bluetooth radio is currently turned OFF.");
+            DisplayManager.printToConsole(
+                    TAG, "Bluetooth manager initialized, " +
+                            "but Bluetooth radio is currently turned OFF.");
         } else {
-            Log.i(TAG, "BluetoothAdapter successfully initialized!");
+            DisplayManager.printToConsole(
+                    TAG, "BluetoothAdapter successfully initialized!");
         }
     }
-
 
     BluetoothLeScanner bleScanner;
 
@@ -60,17 +60,8 @@ public class BluetoothLeService {
 
             BluetoothDevice device = result.getDevice();
 
-            if (ActivityCompat.checkSelfPermission(context,
-                    Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
-                // TODO: Consider calling
-                //    ActivityCompat#requestPermissions for android 12+
-                // here to request the missing permissions, and then overriding
-                //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-                //                                          int[] grantResults)
-                // to handle the case where the user grants the permission. See the documentation
-                // for ActivityCompat#requestPermissions for more details.
-                //return;
-            }
+            // TODO: Consider calling
+            //    ActivityCompat#requestPermissions for android 12+
 
             String deviceName = device.getName();
             String deviceAddress = device.getAddress(); // MAC Address
@@ -79,15 +70,13 @@ public class BluetoothLeService {
             // Target your specific peripheral hardware by filtering its name or MAC address
             if (deviceName != null && deviceName.equals("ESP32_GATT_Peripheral")) {
 
-                Log.i("BLE_LOG", "Target found! Halting scanner and establishing GATT link...");
+                DisplayManager.printToConsole(
+                        "BLE_LOG", "Target found! Halting scanner and establishing GATT link...");
                 bleScanner.stopScan(leScanCallback); // Stop scanning immediately to stabilize the radio
 
                 // STEP C: Connecting
                 // The system knows which device because you invoke it ON the caught 'device' instance
                 BluetoothGatt bluetoothGatt = device.connectGatt(context, false, gattCallback);
-
-                mainActivity.changeBleDeviceName(device.getName());
-
             }
         }
     };
@@ -96,11 +85,13 @@ public class BluetoothLeService {
         @Override
         public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
             if (newState == BluetoothProfile.STATE_CONNECTED) {
-                Log.d(TAG, "Connected to GATT server. Starting service discovery...");
+                DisplayManager.printToConsole(
+                        TAG, "Connected to GATT server. Starting service discovery...");
                 // Crucial step: You must discover services before reading data
                 gatt.discoverServices();
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                Log.d(TAG, "Disconnected from GATT server.");
+                DisplayManager.printToConsole(
+                        TAG, "Disconnected from GATT server.");
                 gatt.close(); // Clean up memory immediately
             }
         }
@@ -128,7 +119,8 @@ public class BluetoothLeService {
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 // Raw data arrives as a byte array
                 byte[] rawData = characteristic.getValue();
-                Log.d(TAG, "Data received, byte length: " + rawData.length);
+                DisplayManager.printToConsole(
+                        TAG, "Data received, byte length: " + rawData.length);
             }
         }
     };
@@ -139,9 +131,13 @@ public class BluetoothLeService {
         bleScanner = bluetoothAdapter.getBluetoothLeScanner();
 
         if (bleScanner == null) {
-            Log.w(TAG, "Bluetooth scanner is not initialized");
+            DisplayManager.printToConsole(
+                    TAG, "Bluetooth scanner is not initialized");
         }
+    }
 
+    public void onStart(){
         bleScanner.startScan(leScanCallback);
     }
+
 }
