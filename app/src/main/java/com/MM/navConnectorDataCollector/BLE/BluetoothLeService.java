@@ -1,10 +1,12 @@
 package com.MM.navConnectorDataCollector.BLE;
 
+import android.Manifest;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCallback;
 import android.bluetooth.BluetoothGattCharacteristic;
+import android.bluetooth.BluetoothGattDescriptor;
 import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothProfile;
@@ -15,6 +17,8 @@ import android.content.Context;
 
 import android.util.Log;
 
+import androidx.annotation.RequiresPermission;
+
 import com.MM.navConnectorDataCollector.MainActivity;
 import com.MM.navConnectorDataCollector.view.DisplayManager;
 
@@ -24,6 +28,11 @@ import java.util.UUID;
 public class BluetoothLeService {
     private MainActivity mainActivity;
     private final Context context;
+
+    private final UUID serviceUuid = UUID.fromString("4fa4c1a1-1217-4bb9-94c3-154e1f74198a");
+    private final UUID charUuid = UUID.fromString("beb5483e-36e1-4688-b7f5-ea07361b26a8");
+    // Standard BLE UUID for Client Characteristic Configuration Descriptor (CCCD)
+    private final UUID cccdUuid = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
 
     public BluetoothLeService(Context addContext, MainActivity newActivity) {
         context = addContext;
@@ -51,9 +60,12 @@ public class BluetoothLeService {
         }
     }
 
-    BluetoothLeScanner bleScanner;
+    private BluetoothLeScanner bleScanner;
 
-    ScanCallback leScanCallback = new ScanCallback() {
+    private BluetoothGatt bluetoothGatt;
+
+    private final ScanCallback leScanCallback = new ScanCallback() {
+        @RequiresPermission(allOf = {Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN})
         @Override
         public void onScanResult(int callbackType, ScanResult result) {
             super.onScanResult(callbackType, result);
@@ -76,52 +88,81 @@ public class BluetoothLeService {
 
                 // STEP C: Connecting
                 // The system knows which device because you invoke it ON the caught 'device' instance
-                BluetoothGatt bluetoothGatt = device.connectGatt(context, false, gattCallback);
+
+                if (bluetoothGatt != null) {
+                    bluetoothGatt.disconnect();
+                    bluetoothGatt.close();
+                    bluetoothGatt = null;
+                }
+
+                bluetoothGatt = device.connectGatt(context, false, gattCallback);
             }
         }
     };
 
-    BluetoothGattCallback gattCallback = new BluetoothGattCallback() {
+    private final BluetoothGattCallback gattCallback = new BluetoothGattCallback() {
+        @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
         @Override
         public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
             if (newState == BluetoothProfile.STATE_CONNECTED) {
                 DisplayManager.printToConsole(
                         TAG, "Connected to GATT server. Starting service discovery...");
-                // Crucial step: You must discover services before reading data
                 gatt.discoverServices();
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 DisplayManager.printToConsole(
                         TAG, "Disconnected from GATT server.");
-                gatt.close(); // Clean up memory immediately
+                gatt.close();
+
+                // Clear the active variable reference so the app knows it's dead
+                bluetoothGatt = null;
             }
         }
 
+        @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
         @Override
         public void onServicesDiscovered(BluetoothGatt gatt, int status) {
             if (status == BluetoothGatt.GATT_SUCCESS) {
-                // Target the specific Service and Characteristic UUIDs you need
-                UUID serviceUuid = UUID.fromString("4fa4c1a1-1217-4bb9-94c3-154e1f74198a");
-                UUID charUuid = UUID.fromString("beb5483e-36e1-4688-b7f5-ea07361b26a8");
-
                 BluetoothGattService service = gatt.getService(serviceUuid);
                 if (service != null) {
                     BluetoothGattCharacteristic characteristic = service.getCharacteristic(charUuid);
                     if (characteristic != null) {
-                        // Read the characteristic asynchronously
-                        gatt.readCharacteristic(characteristic);
+
+                        // 1. Tell Android to listen locally for notifications
+                        gatt.setCharacteristicNotification(characteristic, true);
+
+                        // 2. Tell the hardware peripheral to start sending notifications
+                        BluetoothGattDescriptor descriptor = characteristic.getDescriptor(cccdUuid);
+                        if (descriptor != null) {
+                            descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
+
+                            // 3. Push the registration configuration down to the hardware
+                            boolean success = gatt.writeDescriptor(descriptor);
+                            DisplayManager.printToConsole(
+                                    TAG, "Subscribed to updates: " + success);
+                        } else {
+                            DisplayManager.printToConsole(
+                                    TAG, "Error: CCCD Descriptor not found!");
+                        }
                     }
                 }
             }
         }
 
+        // This will now trigger automatically whenever your peripheral pushes updates
         @Override
-        public void onCharacteristicRead(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
-            if (status == BluetoothGatt.GATT_SUCCESS) {
-                // Raw data arrives as a byte array
-                byte[] rawData = characteristic.getValue();
-                DisplayManager.printToConsole(
-                        TAG, "Data received, byte length: " + rawData.length);
+        public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
+            byte[] rawData = characteristic.getValue();
+            DisplayManager.printToConsole(
+                    TAG, "Stream update byte length: " + rawData.length);
+
+            //String cleanText = new String(rawData, java.nio.charset.StandardCharsets.UTF_8);
+            StringBuilder sb = new StringBuilder();
+            for (byte b : rawData) {
+                sb.append(Byte.toUnsignedInt(b)).append(" ");
             }
+            String result = sb.toString().trim();
+            DisplayManager.printToConsole(
+                    TAG, result);
         }
     };
 
@@ -136,7 +177,7 @@ public class BluetoothLeService {
         }
     }
 
-    public void onStart(){
+    public void onStart() {
         bleScanner.startScan(leScanCallback);
     }
 
