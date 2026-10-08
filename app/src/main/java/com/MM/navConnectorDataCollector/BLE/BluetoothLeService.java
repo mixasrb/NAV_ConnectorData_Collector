@@ -34,6 +34,8 @@ public class BluetoothLeService {
     // Standard BLE UUID for Client Characteristic Configuration Descriptor (CCCD)
     private final UUID cccdUuid = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
 
+    private final String DEVICE_NAME = "ESP32_GATT_Peripheral";
+
     public BluetoothLeService(Context addContext, MainActivity newActivity) {
         context = addContext;
         mainActivity = newActivity;
@@ -43,7 +45,7 @@ public class BluetoothLeService {
     private BluetoothManager bluetoothManager = null;
     private BluetoothAdapter bluetoothAdapter = null;
 
-    private void Initialize() {
+    public void Initialize() {
         bluetoothManager = (BluetoothManager) context.getSystemService(Context.BLUETOOTH_SERVICE);
         bluetoothAdapter = (bluetoothManager != null) ? bluetoothManager.getAdapter() : null;
 
@@ -57,6 +59,13 @@ public class BluetoothLeService {
         } else {
             DisplayManager.printToConsole(
                     TAG, "BluetoothAdapter successfully initialized!");
+        }
+
+        bleScanner = bluetoothAdapter.getBluetoothLeScanner();
+
+        if (bleScanner == null) {
+            DisplayManager.printToConsole(
+                    TAG, "Bluetooth scanner is not initialized");
         }
     }
 
@@ -80,10 +89,10 @@ public class BluetoothLeService {
             Log.d(TAG, "Found: '" + deviceName + "' [" + deviceAddress + "]");
 
             // Target your specific peripheral hardware by filtering its name or MAC address
-            if (deviceName != null && deviceName.equals("ESP32_GATT_Peripheral")) {
+            if (deviceName != null && deviceName.equals(DEVICE_NAME)) {
 
                 DisplayManager.printToConsole(
-                        "BLE_LOG", "Target found! Halting scanner and establishing GATT link...");
+                        TAG, "Target found! Halting scanner and establishing GATT link...");
                 bleScanner.stopScan(leScanCallback); // Stop scanning immediately to stabilize the radio
 
                 // STEP C: Connecting
@@ -152,32 +161,36 @@ public class BluetoothLeService {
         @Override
         public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
             byte[] rawData = characteristic.getValue();
-            DisplayManager.printToConsole(
-                    TAG, "Stream update byte length: " + rawData.length);
+            DisplayManager.printToConsole(TAG, "Stream update byte length: " + rawData.length);
 
-            //String cleanText = new String(rawData, java.nio.charset.StandardCharsets.UTF_8);
-            StringBuilder sb = new StringBuilder();
-            for (byte b : rawData) {
-                sb.append(Byte.toUnsignedInt(b)).append(" ");
+            // Parse the raw bytes matching your C++ packed structure
+            if (rawData != null && rawData.length >= 20) {
+                java.nio.ByteBuffer buffer = java.nio.ByteBuffer.wrap(rawData).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+
+                // 1. Header (1 byte, unsigned)
+                int header = Byte.toUnsignedInt(buffer.get());
+                DisplayManager.printToConsole(TAG, "Header: 0x" + Integer.toHexString(header).toUpperCase());
+
+                // 2. Data elements (8 bytes) converted to a String
+                byte[] dataBytes = new byte[8];
+                buffer.get(dataBytes);
+                String dataStr = new String(dataBytes, java.nio.charset.StandardCharsets.US_ASCII);
+                DisplayManager.printToConsole(TAG, "Data: " + dataStr);
+
+                // 3. Packed Time (4 bytes)
+                long packedTime = Integer.toUnsignedLong(buffer.getInt());
+                long h  = (packedTime >> 22) & 0x3FF;
+                long m  = (packedTime >> 16) & 0x3F;
+                long s  = (packedTime >> 10) & 0x3F;
+                long ms = packedTime & 0x3FF;
+
+                String timeStr = String.format("%02d:%02d:%02d.%03d", h, m, s, ms);
+                DisplayManager.printToConsole(TAG, "Time: " + timeStr);
             }
-            String result = sb.toString().trim();
-            DisplayManager.printToConsole(
-                    TAG, result);
         }
     };
 
-    public void onCreate() {
-        Initialize();
-
-        bleScanner = bluetoothAdapter.getBluetoothLeScanner();
-
-        if (bleScanner == null) {
-            DisplayManager.printToConsole(
-                    TAG, "Bluetooth scanner is not initialized");
-        }
-    }
-
-    public void onStart() {
+    public void Start() {
         bleScanner.startScan(leScanCallback);
     }
 

@@ -35,7 +35,7 @@ public class MainActivity extends AppCompatActivity {
             ActivityCompat.requestPermissions(this,
                     new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 101);
         } else
-            bluetoothLeService.onCreate();
+            bluetoothLeService.Initialize();
     }
 
     @Override
@@ -46,14 +46,14 @@ public class MainActivity extends AppCompatActivity {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
                 == PackageManager.PERMISSION_GRANTED)
 
-            bluetoothLeService.onCreate();
+            bluetoothLeService.Initialize();
     }
 
     @Override
     public void onStart() {
         super.onStart();
 
-        bluetoothLeService.onStart();
+        bluetoothLeService.Start();
 
         String filename = "myfile.txt";
         try (FileOutputStream fos = MainActivity.this.openFileOutput(filename, Context.MODE_PRIVATE)) {
