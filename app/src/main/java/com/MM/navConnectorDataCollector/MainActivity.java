@@ -53,7 +53,7 @@ public class MainActivity extends AppCompatActivity {
     public void onStart() {
         super.onStart();
 
-        bluetoothLeService.Start();
+        bluetoothLeService.OnStart();
 
         String filename = "myfile.txt";
         try (FileOutputStream fos = MainActivity.this.openFileOutput(filename, Context.MODE_PRIVATE)) {

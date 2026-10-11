@@ -24,22 +24,21 @@ import java.util.UUID;
 
 
 public class BluetoothLeService {
+    public static final String TAG = "BLE";
     private MainActivity mainActivity;
     private final Context context;
 
-    private final UUID serviceUuid = UUID.fromString("4fa4c1a1-1217-4bb9-94c3-154e1f74198a");
-    private final UUID charUuid = UUID.fromString("beb5483e-36e1-4688-b7f5-ea07361b26a8");
+    private static final UUID serviceUuid = UUID.fromString("4fa4c1a1-1217-4bb9-94c3-154e1f74198a");
+    private static final UUID charUuid = UUID.fromString("beb5483e-36e1-4688-b7f5-ea07361b26a8");
     // Standard BLE UUID for Client Characteristic Configuration Descriptor (CCCD)
-    private final UUID cccdUuid = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
-
-    private final String TARGET_DEVICE_NAME = "ESP32_GATT_Peripheral";
+    private static  final UUID cccdUuid = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
+    private static final String TARGET_DEVICE_NAME = "ESP32_GATT_Peripheral";
 
     public BluetoothLeService(Context addContext, MainActivity activity) {
         context = addContext;
         mainActivity = activity;
     }
 
-    public static final String TAG = "BLE";
     private BluetoothManager bluetoothManager = null;
     private BluetoothAdapter bluetoothAdapter = null;
 
@@ -67,9 +66,8 @@ public class BluetoothLeService {
         }
     }
 
-    private BluetoothLeScanner bleScanner;
-
-    private BluetoothGatt bluetoothGatt;
+    private BluetoothLeScanner bleScanner = null;
+    private BluetoothGatt bluetoothGatt = null;
 
     private final ScanCallback bleScanCallback = new ScanCallback() {
         @RequiresPermission(allOf = {Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN})
@@ -84,17 +82,13 @@ public class BluetoothLeService {
 
             String deviceName = device.getName();
             String deviceAddress = device.getAddress(); // MAC Address
+
             DisplayManager.printToConsole(TAG, "Found: '" + deviceName + "' [" + deviceAddress + "]");
 
             // Target your specific peripheral hardware by filtering its name or MAC address
             if (deviceName != null && deviceName.equals(TARGET_DEVICE_NAME)) {
 
-                DisplayManager.printToConsole(
-                        TAG, "Target found! Halting scanner and establishing GATT link...");
                 bleScanner.stopScan(bleScanCallback); // Stop scanning immediately to stabilize the radio
-
-                // STEP C: Connecting
-                // The system knows which device because you invoke it ON the caught 'device' instance
 
                 if (bluetoothGatt != null) {
                     bluetoothGatt.disconnect();
@@ -103,6 +97,9 @@ public class BluetoothLeService {
                 }
 
                 bluetoothGatt = device.connectGatt(context, false, gattCallback);
+
+                DisplayManager.printToConsole(
+                        TAG, "Target found! Halting scanner and establishing GATT link...");
             }
         }
     };
@@ -124,9 +121,10 @@ public class BluetoothLeService {
                 return;
             }
 
+            gatt.discoverServices();
+
             DisplayManager.printToConsole(
                     TAG, "Connected to GATT server. Starting service discovery...");
-            gatt.discoverServices();
         }
 
         @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
@@ -143,10 +141,10 @@ public class BluetoothLeService {
             if (characteristic == null)
                 return;
 
-            // 1. Tell Android to listen locally for notifications
+            // Tell Android to listen locally for notifications
             gatt.setCharacteristicNotification(characteristic, true);
 
-            // 2. Tell the hardware peripheral to start sending notifications
+            // Tell the hardware peripheral to start sending notifications
             BluetoothGattDescriptor descriptor = characteristic.getDescriptor(cccdUuid);
             if (descriptor == null) {
                 DisplayManager.printToConsole(
@@ -156,7 +154,7 @@ public class BluetoothLeService {
 
             descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
 
-            // 3. Push the registration configuration down to the hardware
+            // Push the registration configuration down to the hardware
             boolean success = gatt.writeDescriptor(descriptor);
             DisplayManager.printToConsole(
                     TAG, "Subscribed to updates: " + success);
@@ -170,6 +168,7 @@ public class BluetoothLeService {
 
 
             if (rawData == null && rawData.length < 20) {
+                DisplayManager.printToConsole(TAG, "Update dropped, byte length is < 20");
                 return;
             }
 
@@ -177,17 +176,17 @@ public class BluetoothLeService {
 
             java.nio.ByteBuffer buffer = java.nio.ByteBuffer.wrap(rawData).order(java.nio.ByteOrder.LITTLE_ENDIAN);
 
-            // 1. Header (1 byte, unsigned)
+            // Header (1 byte, unsigned)
             int header = Byte.toUnsignedInt(buffer.get());
             DisplayManager.printToConsole(TAG, "Header: 0x" + Integer.toHexString(header).toUpperCase());
 
-            // 2. Data elements (8 bytes) converted to a String
+            // Data elements (8 bytes) converted to a String
             byte[] dataBytes = new byte[8];
             buffer.get(dataBytes);
             String dataStr = new String(dataBytes, java.nio.charset.StandardCharsets.US_ASCII);
             DisplayManager.printToConsole(TAG, "Data: " + dataStr);
 
-            // 3. Packed Time (4 bytes)
+            // Packed Time (4 bytes)
             long packedTime = Integer.toUnsignedLong(buffer.getInt());
             long h = (packedTime >> 22) & 0x3FF;
             long m = (packedTime >> 16) & 0x3F;
@@ -200,7 +199,7 @@ public class BluetoothLeService {
         }
     };
 
-    public void Start() {
+    public void OnStart() {
         bleScanner.startScan(bleScanCallback);
     }
 }
