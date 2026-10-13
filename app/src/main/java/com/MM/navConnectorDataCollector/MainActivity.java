@@ -4,7 +4,6 @@ import android.Manifest;
 import android.content.ContentValues;
 import android.content.pm.PackageManager;
 import android.net.Uri;
-import android.os.Build;
 import android.os.Bundle;
 import android.provider.MediaStore;
 import android.util.Log;
@@ -20,7 +19,6 @@ import com.MM.navConnectorDataCollector.view.DisplayManager;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 
@@ -34,9 +32,11 @@ public class MainActivity extends AppCompatActivity {
 
         new DisplayManager(this);
 
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+        if (ContextCompat.checkSelfPermission(this,
+                Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
 
-            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 101);
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 101);
         } else bluetoothLeService.Initialize();
     }
 
@@ -44,13 +44,13 @@ public class MainActivity extends AppCompatActivity {
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
 
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED)
+        if (ContextCompat.checkSelfPermission(this,
+                Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED)
 
             bluetoothLeService.Initialize();
     }
 
     public BlockingQueue<ByteBuffer> linResponsesBuffer = new ArrayBlockingQueue<>(1024);
-
 
     @Override
     public void onStart() {
@@ -69,14 +69,11 @@ public class MainActivity extends AppCompatActivity {
             values.put(MediaStore.MediaColumns.MIME_TYPE, "text/plain");
 
             // Route it to the "MM" folder inside the public Downloads directory
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                values.put(MediaStore.MediaColumns.RELATIVE_PATH, "Download/MM/");
-            }
+            values.put(MediaStore.MediaColumns.RELATIVE_PATH, "Download/MM/");
 
             Uri externalUri = MediaStore.Downloads.EXTERNAL_CONTENT_URI;
             Uri fileUri = getContentResolver().insert(externalUri, values);
 
-            // This loop keeps the background thread alive infinitely
             while (!Thread.currentThread().isInterrupted()) {
                 try {
                     // Blocks here until a new ESP32 message arrives

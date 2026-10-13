@@ -22,7 +22,6 @@ import com.MM.navConnectorDataCollector.view.DisplayManager;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 
@@ -141,7 +140,6 @@ public class BluetoothLeService {
             }
 
             ByteBuffer buffer = ByteBuffer.wrap(rawData).order(ByteOrder.LITTLE_ENDIAN);
-            //ByteBuffer buffer = ByteBuffer.allocate(20).order(ByteOrder.LITTLE_ENDIAN);
             try {
                 mainActivity.linResponsesBuffer.put(buffer);
             } catch (InterruptedException e) {
