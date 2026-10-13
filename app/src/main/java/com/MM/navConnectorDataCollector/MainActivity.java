@@ -1,9 +1,13 @@
 package com.MM.navConnectorDataCollector;
 
 import android.Manifest;
-import android.content.Context;
+import android.content.ContentValues;
 import android.content.pm.PackageManager;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.provider.MediaStore;
+import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
@@ -13,11 +17,12 @@ import androidx.core.content.ContextCompat;
 import com.MM.navConnectorDataCollector.BLE.BluetoothLeService;
 import com.MM.navConnectorDataCollector.view.DisplayManager;
 
-import java.io.BufferedReader;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
 
 public class MainActivity extends AppCompatActivity {
     BluetoothLeService bluetoothLeService = new BluetoothLeService(this, this);
@@ -29,25 +34,23 @@ public class MainActivity extends AppCompatActivity {
 
         new DisplayManager(this);
 
-        if (ContextCompat.checkSelfPermission(this,
-                Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
 
-            ActivityCompat.requestPermissions(this,
-                    new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 101);
-        } else
-            bluetoothLeService.Initialize();
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 101);
+        } else bluetoothLeService.Initialize();
     }
 
     @Override
-    public void onRequestPermissionsResult(
-            int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
 
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-                == PackageManager.PERMISSION_GRANTED)
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED)
 
             bluetoothLeService.Initialize();
     }
+
+    public BlockingQueue<ByteBuffer> linResponsesBuffer = new ArrayBlockingQueue<>(1024);
+
 
     @Override
     public void onStart() {
@@ -55,25 +58,81 @@ public class MainActivity extends AppCompatActivity {
 
         bluetoothLeService.OnStart();
 
-        String filename = "myfile.txt";
-        try (FileOutputStream fos = MainActivity.this.openFileOutput(filename, Context.MODE_PRIVATE)) {
-            fos.write("Hello\nmID: 0xff\nData[0] = 0x00".getBytes());
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+        // Start a continuous background consumer thread
+        new Thread(() -> {
+            String TAG = "LIN";
+            String filename = "NAV_Connector_Collected_Data.txt";
 
-        StringBuilder sb = new StringBuilder();
-        try (FileInputStream fis = MainActivity.this.openFileInput("myfile.txt");
-             BufferedReader reader = new BufferedReader(new InputStreamReader(fis))) {
+            // Set up the file properties once for the MediaStore database
+            ContentValues values = new ContentValues();
+            values.put(MediaStore.MediaColumns.DISPLAY_NAME, filename);
+            values.put(MediaStore.MediaColumns.MIME_TYPE, "text/plain");
 
-            String line;
-            while ((line = reader.readLine()) != null) {
-                sb.append(line).append('\n');
-
-                DisplayManager.printToConsole("FileIO", "File Contents: " + line);
+            // Route it to the "MM" folder inside the public Downloads directory
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                values.put(MediaStore.MediaColumns.RELATIVE_PATH, "Download/MM/");
             }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+
+            Uri externalUri = MediaStore.Downloads.EXTERNAL_CONTENT_URI;
+            Uri fileUri = getContentResolver().insert(externalUri, values);
+
+            // This loop keeps the background thread alive infinitely
+            while (!Thread.currentThread().isInterrupted()) {
+                try {
+                    // Blocks here until a new ESP32 message arrives
+                    ByteBuffer buffer = linResponsesBuffer.take();
+
+                    // Parse raw bytes matching ESP32 C++ packed structure
+                    StringBuilder sb = new StringBuilder();
+                    for (int i = 0; i < 9; i++) {
+                        switch (i) {
+                            case (0):
+                                sb.append("Header: ")
+                                        .append("0x")
+                                        .append(Integer.toHexString(Byte.toUnsignedInt(buffer.get())).toUpperCase())
+                                        .append('\n');
+                                break;
+                            default:
+                                sb.append("Data[").append(i - 1).append("] ")
+                                        .append(Integer.toString(Byte.toUnsignedInt(buffer.get())).toUpperCase())
+                                        .append('\n');
+                        }
+                    }
+
+                    String dataStr = sb.toString();
+
+                    long packedTime = Integer.toUnsignedLong(buffer.getInt());
+                    long h = (packedTime >> 22) & 0x3FF;
+                    long m = (packedTime >> 16) & 0x3F;
+                    long s = (packedTime >> 10) & 0x3F;
+                    long ms = packedTime & 0x3FF;
+                    String timeStr = String.format("%02d:%02d:%02d.%03d", h, m, s, ms);
+
+                    String txtStr = dataStr + "Timestamp: " + timeStr + '\n';
+
+                    // Update layout console
+                    runOnUiThread(() -> {
+                        //DisplayManager.printToConsole(TAG, "Data:\n" + txtStr);
+                    });
+
+                    // Append data straight to the public fileUri
+                    if (fileUri != null) {
+                        try (OutputStream os = getContentResolver().openOutputStream(fileUri, "wa")) {
+                            if (os != null) {
+                                os.write(txtStr.getBytes());
+                            }
+                        } catch (IOException e) {
+                            Log.e(TAG, "Error writing packet to Download/MM/", e);
+                        }
+                    }
+
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                } catch (Exception e) {
+                    Log.e(TAG, "Error parsing incoming packet", e);
+                }
+            }
+        }).start();
     }
 }

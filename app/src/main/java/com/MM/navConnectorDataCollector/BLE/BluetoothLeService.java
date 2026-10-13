@@ -20,6 +20,9 @@ import androidx.annotation.RequiresPermission;
 import com.MM.navConnectorDataCollector.MainActivity;
 import com.MM.navConnectorDataCollector.view.DisplayManager;
 
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 
@@ -31,7 +34,7 @@ public class BluetoothLeService {
     private static final UUID serviceUuid = UUID.fromString("4fa4c1a1-1217-4bb9-94c3-154e1f74198a");
     private static final UUID charUuid = UUID.fromString("beb5483e-36e1-4688-b7f5-ea07361b26a8");
     // Standard BLE UUID for Client Characteristic Configuration Descriptor (CCCD)
-    private static  final UUID cccdUuid = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
+    private static final UUID cccdUuid = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
     private static final String TARGET_DEVICE_NAME = "ESP32_GATT_Peripheral";
 
     public BluetoothLeService(Context addContext, MainActivity activity) {
@@ -41,6 +44,7 @@ public class BluetoothLeService {
 
     private BluetoothManager bluetoothManager = null;
     private BluetoothAdapter bluetoothAdapter = null;
+    private BluetoothLeScanner bleScanner = null;
 
     public void Initialize() {
         bluetoothManager = (BluetoothManager) context.getSystemService(Context.BLUETOOTH_SERVICE);
@@ -66,43 +70,7 @@ public class BluetoothLeService {
         }
     }
 
-    private BluetoothLeScanner bleScanner = null;
     private BluetoothGatt bluetoothGatt = null;
-
-    private final ScanCallback bleScanCallback = new ScanCallback() {
-        @RequiresPermission(allOf = {Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN})
-        @Override
-        public void onScanResult(int callbackType, ScanResult result) {
-            super.onScanResult(callbackType, result);
-
-            BluetoothDevice device = result.getDevice();
-
-            // TODO: Consider calling
-            //    ActivityCompat#requestPermissions for android 12+
-
-            String deviceName = device.getName();
-            String deviceAddress = device.getAddress(); // MAC Address
-
-            DisplayManager.printToConsole(TAG, "Found: '" + deviceName + "' [" + deviceAddress + "]");
-
-            // Target your specific peripheral hardware by filtering its name or MAC address
-            if (deviceName != null && deviceName.equals(TARGET_DEVICE_NAME)) {
-
-                bleScanner.stopScan(bleScanCallback); // Stop scanning immediately to stabilize the radio
-
-                if (bluetoothGatt != null) {
-                    bluetoothGatt.disconnect();
-                    bluetoothGatt.close();
-                    bluetoothGatt = null;
-                }
-
-                bluetoothGatt = device.connectGatt(context, false, gattCallback);
-
-                DisplayManager.printToConsole(
-                        TAG, "Target found! Halting scanner and establishing GATT link...");
-            }
-        }
-    };
 
     private final BluetoothGattCallback gattCallback = new BluetoothGattCallback() {
         @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
@@ -111,12 +79,12 @@ public class BluetoothLeService {
             if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 DisplayManager.printToConsole(
                         TAG, "Disconnected from GATT server.");
+
                 gatt.close();
 
                 // Clear the active variable reference so the app knows it's dead
                 bluetoothGatt = null;
 
-                // TODO: Somehow looks wrong, FIX IT!
                 bleScanner.startScan(bleScanCallback);
                 return;
             }
@@ -172,30 +140,47 @@ public class BluetoothLeService {
                 return;
             }
 
-            // Parse the raw bytes matching ESP32 C++ packed structure
+            ByteBuffer buffer = ByteBuffer.wrap(rawData).order(ByteOrder.LITTLE_ENDIAN);
+            //ByteBuffer buffer = ByteBuffer.allocate(20).order(ByteOrder.LITTLE_ENDIAN);
+            try {
+                mainActivity.linResponsesBuffer.put(buffer);
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+        }
+    };
 
-            java.nio.ByteBuffer buffer = java.nio.ByteBuffer.wrap(rawData).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+    private final ScanCallback bleScanCallback = new ScanCallback() {
+        @RequiresPermission(allOf = {Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_SCAN})
+        @Override
+        public void onScanResult(int callbackType, ScanResult result) {
+            super.onScanResult(callbackType, result);
 
-            // Header (1 byte, unsigned)
-            int header = Byte.toUnsignedInt(buffer.get());
-            DisplayManager.printToConsole(TAG, "Header: 0x" + Integer.toHexString(header).toUpperCase());
+            BluetoothDevice device = result.getDevice();
 
-            // Data elements (8 bytes) converted to a String
-            byte[] dataBytes = new byte[8];
-            buffer.get(dataBytes);
-            String dataStr = new String(dataBytes, java.nio.charset.StandardCharsets.US_ASCII);
-            DisplayManager.printToConsole(TAG, "Data: " + dataStr);
+            // TODO: Consider calling
+            //    ActivityCompat#requestPermissions for android 12+
 
-            // Packed Time (4 bytes)
-            long packedTime = Integer.toUnsignedLong(buffer.getInt());
-            long h = (packedTime >> 22) & 0x3FF;
-            long m = (packedTime >> 16) & 0x3F;
-            long s = (packedTime >> 10) & 0x3F;
-            long ms = packedTime & 0x3FF;
+            String deviceName = device.getName();
+            String deviceAddress = device.getAddress(); // MAC Address
 
-            String timeStr = String.format("%02d:%02d:%02d.%03d", h, m, s, ms);
-            DisplayManager.printToConsole(TAG, "Time: " + timeStr);
+            DisplayManager.printToConsole(TAG, "Found: '" + deviceName + "' [" + deviceAddress + "]");
 
+            if (deviceName != null && deviceName.equals(TARGET_DEVICE_NAME)) {
+
+                bleScanner.stopScan(bleScanCallback); // Stop scanning immediately to stabilize the radio
+
+                if (bluetoothGatt != null) {
+                    bluetoothGatt.disconnect();
+                    bluetoothGatt.close();
+                    bluetoothGatt = null;
+                }
+
+                bluetoothGatt = device.connectGatt(context, false, gattCallback);
+
+                DisplayManager.printToConsole(
+                        TAG, "Target found! Halting scanner and establishing GATT link...");
+            }
         }
     };
 
