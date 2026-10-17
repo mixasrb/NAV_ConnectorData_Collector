@@ -71,6 +71,7 @@ public class BluetoothLeService {
 
     private BluetoothGatt bluetoothGatt = null;
 
+    //TODO: Add Paring Check
     private final BluetoothGattCallback gattCallback = new BluetoothGattCallback() {
         @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
         @Override

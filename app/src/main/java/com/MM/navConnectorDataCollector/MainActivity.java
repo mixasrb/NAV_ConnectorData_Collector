@@ -19,6 +19,7 @@ import com.MM.navConnectorDataCollector.view.DisplayManager;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 
@@ -77,20 +78,33 @@ public class MainActivity extends AppCompatActivity {
             while (!Thread.currentThread().isInterrupted()) {
                 try {
                     // Blocks here until a new ESP32 message arrives
+
                     ByteBuffer buffer = linResponsesBuffer.take();
 
                     // Parse raw bytes matching ESP32 C++ packed structure
                     StringBuilder sb = new StringBuilder();
-                    for (int i = 0; i < 9; i++) {
+                    for (int i = 0; i < 11; i++) {
                         switch (i) {
                             case (0):
+                                sb.append("Type: ")
+                                        .append("0x")
+                                        .append(Integer.toHexString(Byte.toUnsignedInt(buffer.get())).toUpperCase())
+                                        .append('\n');
+                                break;
+                            case (1):
+                                sb.append("Error: ")
+                                        .append("0x")
+                                        .append(Integer.toHexString(Byte.toUnsignedInt(buffer.get())).toUpperCase())
+                                        .append('\n');
+                                break;
+                            case (2):
                                 sb.append("Header: ")
                                         .append("0x")
                                         .append(Integer.toHexString(Byte.toUnsignedInt(buffer.get())).toUpperCase())
                                         .append('\n');
                                 break;
                             default:
-                                sb.append("Data[").append(i - 1).append("] ")
+                                sb.append("Data[").append(i - 3).append("] ")
                                         .append(Integer.toString(Byte.toUnsignedInt(buffer.get())).toUpperCase())
                                         .append('\n');
                         }
@@ -109,7 +123,7 @@ public class MainActivity extends AppCompatActivity {
 
                     // Update layout console
                     runOnUiThread(() -> {
-                        //DisplayManager.printToConsole(TAG, "Data:\n" + txtStr);
+                        DisplayManager.printToConsole(TAG, "Data:\n" + txtStr);
                     });
 
                     // Append data straight to the public fileUri
