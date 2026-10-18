@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.Random;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 
@@ -75,6 +76,8 @@ public class MainActivity extends AppCompatActivity {
             Uri externalUri = MediaStore.Downloads.EXTERNAL_CONTENT_URI;
             Uri fileUri = getContentResolver().insert(externalUri, values);
 
+            long responsesCounter[] = new long[0x40];
+
             while (!Thread.currentThread().isInterrupted()) {
                 try {
                     // Blocks here until a new ESP32 message arrives
@@ -98,9 +101,11 @@ public class MainActivity extends AppCompatActivity {
                                         .append('\n');
                                 break;
                             case (2):
+                                byte header = buffer.get();
+                                responsesCounter[header]++;
                                 sb.append("Header: ")
                                         .append("0x")
-                                        .append(Integer.toHexString(Byte.toUnsignedInt(buffer.get())).toUpperCase())
+                                        .append(Integer.toHexString(Byte.toUnsignedInt(header)).toUpperCase())
                                         .append('\n');
                                 break;
                             default:
@@ -124,6 +129,18 @@ public class MainActivity extends AppCompatActivity {
                     // Update layout console
                     runOnUiThread(() -> {
                         DisplayManager.printToConsole(TAG, "Data:\n" + txtStr);
+
+                        StringBuilder sbr = new StringBuilder();
+                        for (int i = 0; i < 0x40; i++) {
+                            if (responsesCounter[i] > 0)
+                                sbr.append("0x")
+                                        .append(Integer.toHexString(i).toUpperCase())
+                                        .append(" ")
+                                        .append(responsesCounter[i])
+                                        .append("; ");
+                        }
+
+                        DisplayManager.printResponseCount(sbr.toString());
                     });
 
                     // Append data straight to the public fileUri
