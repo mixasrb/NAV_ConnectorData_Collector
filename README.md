@@ -7,4 +7,4 @@ App for collecting LIN Responses via 3 wires BMW Nav connector
 
 ## TODO
 
-- Upload src code of arduino ESP32 microcontroller
+- Upload arduino ESP32 microcontroller src code based on: https://github.com/BRimoldi/BMW-s-Wonder-Wheel-to-Bluetooth/tree/main
